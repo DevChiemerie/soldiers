@@ -536,7 +536,7 @@ if page == "✨ Submit Content":
         st.markdown(f"[View {soldier}'s X profile]({selected_profile})")
 
     with st.form("content_form"):
-        category = st.selectbox("Category", ["Thread/Meme", "Secret's Engagement", "Shill"])
+        category = st.selectbox("Category", ["Thread", "Secret's Engagement/Meme", "Shill"])
         content_url = st.text_input("Content URL")
 
         today = datetime.now(timezone.utc).date()

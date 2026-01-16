@@ -217,9 +217,11 @@ class UpdateService:
                 return False, "Soldier not found. Refresh and try again."
 
             category_map = {
+                "Thread": "TM",
                 "Thread/Meme": "TM",
                 "Thread/Memes": "TM",
                 "Secret's Engagement": "SE",
+                "Secret's Engagement/Meme": "SE",
                 "Shill": "SH",
                 "SHILL": "SH",
             }
