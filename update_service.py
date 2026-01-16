@@ -646,7 +646,8 @@ class UpdateService:
         except Exception as e:
             return False, f"Error: {e}"
 
-    def update_post(self, post_id: str, allowed_handles: List[str], category: str, posted_at: datetime) -> Tuple[bool, str]:
+
+    def update_post(self, post_id: str, allowed_handles: List[str], category: str, posted_at: datetime, new_soldier_handle: Optional[str] = None) -> Tuple[bool, str]:
         try:
             soldiers = self.get_soldiers()
             handle_to_id = {s["handle"].lower(): s["id"] for s in soldiers}
@@ -671,21 +672,57 @@ class UpdateService:
                     posted_dt = posted_dt.replace(tzinfo=timezone.utc)
 
             url = record.get("url") or ""
+            base_url = url.replace("#auto-se", "")
             is_auto = url.endswith("#auto-se")
             new_category = "SE" if is_auto else category
+
+            new_soldier_id = record["soldier_id"]
+            if new_soldier_handle:
+                handle_key = new_soldier_handle.lower()
+                if handle_key not in handle_to_id:
+                    return False, "Invalid soldier."
+                candidate_id = handle_to_id[handle_key]
+                if is_auto and candidate_id != record["soldier_id"]:
+                    return False, "Auto-added entry cannot be reassigned. Edit the base post instead."
+                if candidate_id != record["soldier_id"]:
+                    conflict = (
+                        self.supabase
+                        .table("posts")
+                        .select("id,url")
+                        .eq("soldier_id", candidate_id)
+                        .in_("url", [base_url, f"{base_url}#auto-se"])
+                        .execute()
+                    )
+                    if getattr(conflict, "error", None):
+                        return False, f"Error: {conflict.error}"
+                    if conflict.data:
+                        return False, "Target soldier already has this link."
+                    new_soldier_id = candidate_id
 
             resp = self.supabase.table("posts").update({
                 "category": new_category,
                 "posted_at": posted_dt.isoformat(),
+                "soldier_id": new_soldier_id,
             }).eq("id", post_id).execute()
             if getattr(resp, "error", None):
                 return False, f"Error: {resp.error}"
 
             if not is_auto:
-                base_url = url.replace("#auto-se", "")
                 auto_url = f"{base_url}#auto-se"
+                if new_soldier_id != record["soldier_id"]:
+                    delete_old_auto = (
+                        self.supabase
+                        .table("posts")
+                        .delete()
+                        .eq("soldier_id", record["soldier_id"])
+                        .eq("url", auto_url)
+                        .execute()
+                    )
+                    if getattr(delete_old_auto, "error", None):
+                        return False, f"Error: {delete_old_auto.error}"
+
                 if new_category == "TM":
-                    auto = self.supabase.table("posts").select("id").eq("soldier_id", record["soldier_id"]).eq("url", auto_url).execute()
+                    auto = self.supabase.table("posts").select("id").eq("soldier_id", new_soldier_id).eq("url", auto_url).execute()
                     if getattr(auto, "error", None):
                         return False, f"Error: {auto.error}"
                     if auto.data:
@@ -698,7 +735,7 @@ class UpdateService:
                             return False, f"Error: {upd.error}"
                     else:
                         ins = self.supabase.table("posts").insert({
-                            "soldier_id": record["soldier_id"],
+                            "soldier_id": new_soldier_id,
                             "category": "SE",
                             "url": auto_url,
                             "units": AUTO_SE_UNITS,
@@ -712,12 +749,12 @@ class UpdateService:
                         if getattr(ins, "error", None):
                             return False, f"Error: {ins.error}"
                 else:
-                    delete_auto = self.supabase.table("posts").delete().eq("soldier_id", record["soldier_id"]).eq("url", auto_url).execute()
+                    delete_auto = self.supabase.table("posts").delete().eq("soldier_id", new_soldier_id).eq("url", auto_url).execute()
                     if getattr(delete_auto, "error", None):
                         return False, f"Error: {delete_auto.error}"
 
             # Confirm update applied
-            check = self.supabase.table("posts").select("category,posted_at").eq("id", post_id).execute()
+            check = self.supabase.table("posts").select("category,posted_at,soldier_id").eq("id", post_id).execute()
             if getattr(check, "error", None):
                 return False, f"Error: {check.error}"
             if not check.data:
@@ -737,6 +774,8 @@ class UpdateService:
             except Exception:
                 # If parsing fails, don't block success
                 pass
+            if new_soldier_id != record["soldier_id"] and current.get("soldier_id") != new_soldier_id:
+                return False, "Update failed (soldier unchanged)"
             return True, "Updated"
         except Exception as e:
             return False, f"Error: {e}"

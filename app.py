@@ -797,6 +797,7 @@ elif page == "🛡️ Sergeant Console":
     else:
         soldiers = service.get_soldiers()
         id_to_handle = {s["id"]: s["handle"] for s in soldiers}
+        all_handles = sorted([s["handle"] for s in soldiers])
 
         filter_cols = st.columns([2, 2, 2, 1])
         filter_options = sorted(
@@ -1035,6 +1036,14 @@ elif page == "🛡️ Sergeant Console":
                 is_auto = isinstance(p.get("url"), str) and p.get("url", "").endswith("#auto-se")
 
                 with st.form(f"edit_form_{post_id}"):
+                    soldier_index = all_handles.index(soldier_name) if soldier_name in all_handles else 0
+                    new_soldier = st.selectbox(
+                        "Soldier",
+                        all_handles,
+                        index=soldier_index,
+                        disabled=is_auto,
+                        key=f"edit_soldier_{post_id}",
+                    )
                     new_date = st.date_input("Posted date (UTC)", value=posted_date, key=f"edit_date_{post_id}")
                     new_category = st.selectbox(
                         "Category",
@@ -1045,12 +1054,12 @@ elif page == "🛡️ Sergeant Console":
                         key=f"edit_cat_{post_id}",
                     )
                     if is_auto:
-                        st.caption("Auto-added SE entry. Category is locked to Secret's Engagement.")
+                        st.caption("Auto-added SE entry. Category is locked to Secret's Engagement and the soldier is locked.")
                     save = st.form_submit_button("Save changes")
                     cancel = st.form_submit_button("Cancel")
                     if save:
                         posted_at = datetime.combine(new_date, dtime.min).replace(tzinfo=timezone.utc)
-                        ok, msg = service.update_post(post_id, allowed, new_category, posted_at)
+                        ok, msg = service.update_post(post_id, allowed, new_category, posted_at, new_soldier)
                         if ok:
                             st.success(msg)
                             st.session_state.pop(f"edit_open_{post_id}", None)
