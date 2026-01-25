@@ -560,10 +560,23 @@ if page == "✨ Submit Content":
             )
             window_values.append((prev_start, prev_end))
 
-        window_idx = st.selectbox("Submission window", range(len(window_labels)), format_func=lambda i: window_labels[i])
+        window_idx = st.selectbox(
+            "Submission window",
+            range(len(window_labels)),
+            format_func=lambda i: window_labels[i],
+            key="submission_window",
+        )
         kpi_start, kpi_end = window_values[window_idx]
 
         default_date = min(max(today, kpi_start), kpi_end)
+        date_key = f"posted_date_{kpi_start.isoformat()}_{kpi_end.isoformat()}"
+        if date_key not in st.session_state:
+            st.session_state[date_key] = default_date
+        else:
+            current_val = st.session_state.get(date_key)
+            if current_val and not (kpi_start <= current_val <= kpi_end):
+                st.session_state[date_key] = default_date
+
         st.caption(
             f"Posted date must be within the selected KPI window: {kpi_start} to {kpi_end} (UTC)."
         )
@@ -576,6 +589,7 @@ if page == "✨ Submit Content":
             value=default_date,
             min_value=kpi_start,
             max_value=kpi_end,
+            key=date_key,
         )
         confirm = st.checkbox("I confirm the category and posted date are correct for this link.")
 
