@@ -541,78 +541,80 @@ if page == "✨ Submit Content":
     if selected_profile:
         st.markdown(f"[View {soldier}'s X profile]({selected_profile})")
 
-    with st.form("content_form"):
-        category = st.selectbox("Category", ["Thread", "Secret's Engagement/Meme", "Shill"])
-        content_url = st.text_input("Content URL")
+    category = st.selectbox("Category", ["Thread", "Secret's Engagement/Meme", "Shill"])
+    content_url = st.text_input("Content URL")
 
-        today = datetime.now(timezone.utc).date()
-        grace_days = 2
-        current_start, current_end = current_kpi_window(today)
-        prev_end = current_start - timedelta(days=1)
-        prev_start = prev_end - timedelta(days=27)
+    today = datetime.now(timezone.utc).date()
+    grace_days = 2
+    current_start, current_end = current_kpi_window(today)
+    prev_end = current_start - timedelta(days=1)
+    prev_start = prev_end - timedelta(days=27)
 
-        window_labels = [f"Current KPI window: {current_start} to {current_end}"]
-        window_values = [(current_start, current_end)]
-        late_deadline = prev_end + timedelta(days=grace_days)
-        if today <= late_deadline:
-            window_labels.append(
-                f"Previous KPI window (late submit until {late_deadline}): {prev_start} to {prev_end}"
-            )
-            window_values.append((prev_start, prev_end))
-
-        window_idx = st.selectbox(
-            "Submission window",
-            range(len(window_labels)),
-            format_func=lambda i: window_labels[i],
-            key="submission_window",
+    late_deadline = prev_end + timedelta(days=grace_days)
+    has_prev_window = today <= late_deadline
+    window_options = [
+        (
+            current_start,
+            current_end,
+            f"Current KPI window: {current_start} to {current_end}",
         )
-        kpi_start, kpi_end = window_values[window_idx]
+    ]
+    if has_prev_window:
+        window_options.append(
+            (
+                prev_start,
+                prev_end,
+                f"Previous KPI window (late submit until {late_deadline}): {prev_start} to {prev_end}",
+            )
+        )
 
-        default_date = min(max(today, kpi_start), kpi_end)
-        date_key = f"posted_date_{kpi_start.isoformat()}_{kpi_end.isoformat()}"
-        if date_key not in st.session_state:
-            st.session_state[date_key] = default_date
-        else:
-            current_val = st.session_state.get(date_key)
-            if current_val and not (kpi_start <= current_val <= kpi_end):
-                st.session_state[date_key] = default_date
+    window_choice = st.selectbox(
+        "Submission window",
+        window_options,
+        format_func=lambda item: item[2],
+        key="submission_window",
+    )
+    kpi_start, kpi_end, _ = window_choice
 
+    default_date = min(max(today, kpi_start), kpi_end)
+    date_key = f"posted_date_{kpi_start.isoformat()}_{kpi_end.isoformat()}"
+
+    st.caption(
+        f"Posted date must be within the selected KPI window: {kpi_start} to {kpi_end} (UTC)."
+    )
+    if has_prev_window:
         st.caption(
-            f"Posted date must be within the selected KPI window: {kpi_start} to {kpi_end} (UTC)."
+            f"Late submissions are open until {late_deadline} (UTC), but the posted date must stay inside the selected window."
         )
-        if len(window_labels) > 1:
-            st.caption(
-                f"Late submissions are open until {late_deadline} (UTC), but the posted date must stay inside the selected window."
-            )
-        posted_date = st.date_input(
-            "Posted date (UTC)",
-            value=default_date,
-            min_value=kpi_start,
-            max_value=kpi_end,
-            key=date_key,
-        )
-        confirm = st.checkbox("I confirm the category and posted date are correct for this link.")
+    posted_date = st.date_input(
+        "Posted date (UTC)",
+        value=default_date,
+        min_value=kpi_start,
+        max_value=kpi_end,
+        key=date_key,
+    )
+    confirm = st.checkbox("I confirm the category and posted date are correct for this link.")
 
-        if st.form_submit_button("Submit Content"):
-            if not content_url:
-                st.error("Please enter a content URL")
-            elif not soldier:
-                st.error("Please select a soldier")
-            elif not confirm:
-                st.error("Please confirm category and posted date are correct.")
-            elif posted_date < kpi_start or posted_date > kpi_end:
-                st.error(f"Posted date must be within the selected KPI window: {kpi_start} to {kpi_end} (UTC).")
+    if st.button("Submit Content"):
+        if not content_url:
+            st.error("Please enter a content URL")
+        elif not soldier:
+            st.error("Please select a soldier")
+        elif not confirm:
+            st.error("Please confirm category and posted date are correct.")
+        elif posted_date < kpi_start or posted_date > kpi_end:
+            st.error(f"Posted date must be within the selected KPI window: {kpi_start} to {kpi_end} (UTC).")
+        else:
+            posted_at = datetime.combine(posted_date, dtime.min).replace(tzinfo=timezone.utc)
+            with st.spinner("Recording content..."):
+                success, message = service.add_content(soldier, content_url, category, posted_at, use_auto_fetch=False)
+            if success:
+                st.success(f"✅ {message}")
+                time.sleep(2)
+                st.balloons()
+                st.rerun()
             else:
-                posted_at = datetime.combine(posted_date, dtime.min).replace(tzinfo=timezone.utc)
-                with st.spinner("Recording content..."):
-                    success, message = service.add_content(soldier, content_url, category, posted_at, use_auto_fetch=False)
-                if success:
-                    st.success(f"✅ {message}")
-                    time.sleep(2)
-                    st.balloons()
-                    st.rerun()
-                else:
-                    st.error(f"❌ {message}")
+                st.error(f"❌ {message}")
 
 elif page == "🏅 Leaderboard":
     role = st.session_state.get("user_role")
