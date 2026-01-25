@@ -56,7 +56,10 @@ if "remember_me" not in st.session_state:
 def _kpi_month_window(target_date: date) -> Tuple[date, date]:
     month_start = date(target_date.year, target_date.month, 1)
     # KPI month starts on the Sunday before the 1st of the month
-    start = month_start - timedelta(days=(month_start.weekday() + 1) % 7)
+    offset = (month_start.weekday() + 1) % 7
+    if offset == 0:
+        offset = 7
+    start = month_start - timedelta(days=offset)
     end = start + timedelta(days=27)
     return start, end
 
@@ -90,7 +93,10 @@ def kpi_month_sequence(today: date, count: int = 6) -> List[Tuple[int, int]]:
 
 def start_of_week_window(target_date: date) -> date:
     """Return the Sunday that starts the 4-week window containing the month start."""
-    return target_date - timedelta(days=(target_date.weekday() + 1) % 7)
+    offset = (target_date.weekday() + 1) % 7
+    if offset == 0:
+        offset = 7
+    return target_date - timedelta(days=offset)
 
 
 def four_week_windows(year: int, month: int) -> List[Tuple[date, date]]:

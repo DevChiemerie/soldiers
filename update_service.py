@@ -37,14 +37,17 @@ def compute_qq_points(units: int) -> int:
 
 def start_of_week_window(target_date: date) -> date:
     """Return the Sunday that starts the 4-week window containing the month start."""
-    # weekday(): Monday=0, Sunday=6. We want the previous Sunday (or same day if Sunday)
-    return target_date - timedelta(days=(target_date.weekday() + 1) % 7)
+    # weekday(): Monday=0, Sunday=6. Always use the Sunday before the month start.
+    offset = (target_date.weekday() + 1) % 7
+    if offset == 0:
+        offset = 7
+    return target_date - timedelta(days=offset)
 
 
 def _kpi_month_window(target_date: date) -> Tuple[date, date]:
     month_start = date(target_date.year, target_date.month, 1)
     # KPI month starts on the Sunday before the 1st of the month
-    start = month_start - timedelta(days=(month_start.weekday() + 1) % 7)
+    start = start_of_week_window(month_start)
     end = start + timedelta(days=27)
     return start, end
 
