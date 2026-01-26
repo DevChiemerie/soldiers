@@ -739,9 +739,11 @@ elif page == "🏅 Leaderboard":
 
                 non_total = ~total_mask
                 tm_mask = non_total & (pd.to_numeric(data["TM"], errors="coerce") < 4)
-                sh_mask = non_total & (pd.to_numeric(data["SH"], errors="coerce") < 560)
+                sh_mask = non_total & (pd.to_numeric(data["SH"], errors="coerce") < 420)
+                qq_mask = non_total & (pd.to_numeric(data["QQ Rating"], errors="coerce") < 0.70)
                 styles.loc[tm_mask, "TM"] = "color: #d00000; font-weight: 600"
                 styles.loc[sh_mask, "SH"] = "color: #d00000; font-weight: 600"
+                styles.loc[qq_mask, "QQ Rating"] = "color: #d00000; font-weight: 600"
 
                 return styles
 
