@@ -530,7 +530,7 @@ if page == "✨ Submit Content":
         render_profile_header(handle, f"gm {handle} ⚡️🛡️", "✍️ Submit New Content")
     else:
         st.title("✍️ Submit New Content")
-    st.caption("Thread auto-adds +6 units to Secret's Engagement on the same posted date. If OP is a meme NOT a thread, ADD it to Secret's Engagement.")
+    st.caption("Thread auto-adds +3 units to Secret's Engagement on the same posted date. If OP is a meme NOT a thread, ADD it to Secret's Engagement.")
 
     soldiers = service.get_soldiers()
     soldier_handles = [s["handle"] for s in soldiers] if soldiers else []

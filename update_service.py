@@ -15,17 +15,17 @@ load_dotenv()
 QQ_THRESHOLDS: List[Tuple[int, int]] = [
     (0, 0),
     (2, 1),
-    (5, 2),
-    (8, 3),
-    (11, 4),
-    (15, 5),
-    (20, 6),
-    (25, 7),
-    (30, 8),
-    (35, 9),
+    (4, 2),
+    (6, 3),
+    (8, 4),
+    (10, 5),
+    (12, 6),
+    (14, 7),
+    (16, 8),
+    (19, 9),
 ]
 
-AUTO_SE_UNITS = 6
+AUTO_SE_UNITS = 3
 
 
 def compute_qq_points(units: int) -> int:
