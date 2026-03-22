@@ -35,40 +35,26 @@ def compute_qq_points(units: int) -> int:
     return 10
 
 
-def start_of_week_window(target_date: date) -> date:
-    """Return the Sunday that starts the 4-week window containing the month start."""
-    # weekday(): Monday=0, Sunday=6. Always use the Sunday before the month start.
-    offset = (target_date.weekday() + 1) % 7
-    if offset == 0:
-        offset = 7
-    return target_date - timedelta(days=offset)
+KPI_ANCHOR_START = date(2025, 11, 30)
 
 
 def _kpi_month_window(target_date: date) -> Tuple[date, date]:
-    month_start = date(target_date.year, target_date.month, 1)
-    # KPI month starts on the Sunday before the 1st of the month
-    start = start_of_week_window(month_start)
+    """Continuous 28-day KPI windows anchored at 2025-11-30."""
+    days_from_anchor = (target_date - KPI_ANCHOR_START).days
+    window_index = days_from_anchor // 28
+    start = KPI_ANCHOR_START + timedelta(days=window_index * 28)
     end = start + timedelta(days=27)
     return start, end
 
 
 def current_kpi_window_for_date(target_date: date) -> Tuple[date, date]:
-    start, end = _kpi_month_window(target_date)
-    if target_date > end:
-        next_month = 1 if target_date.month == 12 else target_date.month + 1
-        next_year = target_date.year + (1 if target_date.month == 12 else 0)
-        start, end = _kpi_month_window(date(next_year, next_month, 1))
-    elif target_date < start:
-        prev_month = 12 if target_date.month == 1 else target_date.month - 1
-        prev_year = target_date.year - (1 if target_date.month == 1 else 0)
-        start, end = _kpi_month_window(date(prev_year, prev_month, 1))
-    return start, end
+    return _kpi_month_window(target_date)
 
 
 def four_week_windows(year: int, month: int) -> List[Tuple[date, date]]:
-    """Compute 4 week windows as specified (rolling Sunday starts)."""
-    month_start = date(year, month, 1)
-    week1_start = start_of_week_window(month_start)
+    """Compute 4 week windows for a KPI month identified by its end-month label."""
+    reference_date = date(year, month, 15)
+    week1_start, _ = _kpi_month_window(reference_date)
     windows = []
     for i in range(4):
         start = week1_start + timedelta(days=7 * i)
@@ -87,10 +73,16 @@ class UpdateService:
         self.supabase = create_client(url, key)
         self._soldier_cache: Dict[str, Dict] = {}
         self._last_soldier_refresh = None
+        self._available_months_cache: List[Tuple[int, int]] = []
+        self._available_months_cached_at: Optional[datetime] = None
 
         # Optional tweet meta sources
         self.x_bearer_token = os.getenv("X_BEARER_TOKEN")
         self.worker_endpoint = os.getenv("WORKER_TWEET_META_ENDPOINT")
+
+    def _invalidate_available_months_cache(self) -> None:
+        self._available_months_cache = []
+        self._available_months_cached_at = None
 
     # -------------------------------------------------------------
     # Soldier helpers
@@ -138,13 +130,13 @@ class UpdateService:
         if handle and handle.lower() != "i":
             return url, handle, tweet_id
         try:
-            resp = requests.get(
+            with requests.get(
                 url,
                 allow_redirects=True,
                 timeout=10,
                 headers={"User-Agent": "Mozilla/5.0"},
-            )
-            final_url = resp.url
+            ) as resp:
+                final_url = str(resp.url)
             resolved_handle, resolved_id = self.extract_handle_and_id(final_url)
             if resolved_handle and resolved_id:
                 return final_url, resolved_handle, resolved_id
@@ -170,11 +162,16 @@ class UpdateService:
         api_url = f"https://api.twitter.com/2/tweets/{tweet_id}"
         params = {"tweet.fields": "created_at,public_metrics"}
         try:
-            resp = requests.get(api_url, params=params, headers={"Authorization": f"Bearer {self.x_bearer_token}"}, timeout=10)
-            if resp.status_code != 200:
-                print(f"⚠️ X API error {resp.status_code}: {resp.text}")
-                return {"error": f"X API error {resp.status_code}", "body": resp.text}
-            data = resp.json().get("data") or {}
+            with requests.get(
+                api_url,
+                params=params,
+                headers={"Authorization": f"Bearer {self.x_bearer_token}"},
+                timeout=10,
+            ) as resp:
+                if resp.status_code != 200:
+                    print(f"⚠️ X API error {resp.status_code}: {resp.text}")
+                    return {"error": f"X API error {resp.status_code}", "body": resp.text}
+                data = resp.json().get("data") or {}
             created = data.get("created_at")
             metrics = data.get("public_metrics") or {}
             parsed_posted_at = None
@@ -369,6 +366,7 @@ class UpdateService:
             result = self.supabase.table("posts").upsert(rows, on_conflict="soldier_id,url").execute()
             if result.data is None:
                 return False, "Insert failed"
+            self._invalidate_available_months_cache()
             return True, "Content recorded with posted date"
         except Exception as e:
             return False, f"Error: {str(e)}"
@@ -378,6 +376,14 @@ class UpdateService:
     # -------------------------------------------------------------
     def get_available_months(self) -> List[Tuple[int, int]]:
         try:
+            now = datetime.now(timezone.utc)
+            if (
+                self._available_months_cache
+                and self._available_months_cached_at
+                and (now - self._available_months_cached_at) < timedelta(minutes=5)
+            ):
+                return list(self._available_months_cache)
+
             page_size = 1000
             start_idx = 0
             months = set()
@@ -400,7 +406,10 @@ class UpdateService:
                 if len(batch) < page_size:
                     break
                 start_idx += page_size
-            return sorted(list(months), reverse=True)
+            result = sorted(list(months), reverse=True)
+            self._available_months_cache = result
+            self._available_months_cached_at = now
+            return list(result)
         except Exception:
             return []
 
@@ -415,7 +424,7 @@ class UpdateService:
             resp = (
                 self.supabase
                 .table("posts")
-                .select("*")
+                .select("id,soldier_id,category,units,posted_at")
                 .gte("posted_at", start_iso)
                 .lte("posted_at", end_iso)
                 .order("posted_at", desc=True)
@@ -567,7 +576,7 @@ class UpdateService:
             resp = (
                 self.supabase
                 .table("posts")
-                .select("*")
+                .select("id,soldier_id,category,url,units,posted_at")
                 .in_("soldier_id", ids)
                 .order("posted_at", desc=True)
                 .order("id", desc=True)
@@ -647,6 +656,7 @@ class UpdateService:
                 return False, f"Error: {check.error}"
             if check.data:
                 return False, "Delete failed (row still exists)"
+            self._invalidate_available_months_cache()
             return True, "Deleted"
         except Exception as e:
             return False, f"Error: {e}"
@@ -781,6 +791,7 @@ class UpdateService:
                 pass
             if new_soldier_id != record["soldier_id"] and current.get("soldier_id") != new_soldier_id:
                 return False, "Update failed (soldier unchanged)"
+            self._invalidate_available_months_cache()
             return True, "Updated"
         except Exception as e:
             return False, f"Error: {e}"

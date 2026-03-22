@@ -53,28 +53,20 @@ if "remember_me" not in st.session_state:
 
 
 
+KPI_ANCHOR_START = date(2025, 11, 30)
+
+
 def _kpi_month_window(target_date: date) -> Tuple[date, date]:
-    month_start = date(target_date.year, target_date.month, 1)
-    # KPI month starts on the Sunday before the 1st of the month
-    offset = (month_start.weekday() + 1) % 7
-    if offset == 0:
-        offset = 7
-    start = month_start - timedelta(days=offset)
+    """Continuous 28-day KPI windows anchored at 2025-11-30."""
+    days_from_anchor = (target_date - KPI_ANCHOR_START).days
+    window_index = days_from_anchor // 28
+    start = KPI_ANCHOR_START + timedelta(days=window_index * 28)
     end = start + timedelta(days=27)
     return start, end
 
 
 def current_kpi_window(today: date) -> Tuple[date, date]:
-    start, end = _kpi_month_window(today)
-    if today > end:
-        next_month = 1 if today.month == 12 else today.month + 1
-        next_year = today.year + (1 if today.month == 12 else 0)
-        start, end = _kpi_month_window(date(next_year, next_month, 1))
-    elif today < start:
-        prev_month = 12 if today.month == 1 else today.month - 1
-        prev_year = today.year - (1 if today.month == 1 else 0)
-        start, end = _kpi_month_window(date(prev_year, prev_month, 1))
-    return start, end
+    return _kpi_month_window(today)
 
 
 def kpi_month_sequence(today: date, count: int = 6) -> List[Tuple[int, int]]:
@@ -91,20 +83,13 @@ def kpi_month_sequence(today: date, count: int = 6) -> List[Tuple[int, int]]:
     return months
 
 
-def start_of_week_window(target_date: date) -> date:
-    """Return the Sunday that starts the 4-week window containing the month start."""
-    offset = (target_date.weekday() + 1) % 7
-    if offset == 0:
-        offset = 7
-    return target_date - timedelta(days=offset)
-
-
 def four_week_windows(year: int, month: int) -> List[Tuple[date, date]]:
-    month_start = date(year, month, 1)
-    week1_start = start_of_week_window(month_start)
+    """Return the 4 weekly windows for a KPI month identified by its end-month label."""
+    reference_date = date(year, month, 15)
+    month_start, _ = _kpi_month_window(reference_date)
     windows = []
     for i in range(4):
-        start = week1_start + timedelta(days=7 * i)
+        start = month_start + timedelta(days=7 * i)
         end = start + timedelta(days=6)
         windows.append((start, end))
     return windows
