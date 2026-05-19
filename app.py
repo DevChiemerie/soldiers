@@ -8,6 +8,7 @@ import base64
 import time
 from pathlib import Path
 from datetime import datetime, timedelta, timezone, date, time as dtime
+from calendar import monthrange
 from typing import List, Tuple
 from urllib.parse import urlsplit, parse_qs
 
@@ -69,6 +70,20 @@ def current_kpi_window(today: date) -> Tuple[date, date]:
     return _kpi_month_window(today)
 
 
+def kpi_window_by_end_month(year: int, month: int) -> Tuple[date, date]:
+    """Map a calendar label (e.g. June 2026) to the KPI window whose END is in that month."""
+    first = date(year, month, 1)
+    last = date(year, month, monthrange(year, month)[1])
+    min_idx = ((first - KPI_ANCHOR_START).days // 28) - 2
+    max_idx = ((last - KPI_ANCHOR_START).days // 28) + 2
+    for idx in range(min_idx, max_idx + 1):
+        start = KPI_ANCHOR_START + timedelta(days=idx * 28)
+        end = start + timedelta(days=27)
+        if end.year == year and end.month == month:
+            return start, end
+    return _kpi_month_window(last)
+
+
 def kpi_month_sequence(today: date, count: int = 6) -> List[Tuple[int, int]]:
     _, end = current_kpi_window(today)
     months = []
@@ -83,12 +98,11 @@ def kpi_month_sequence(today: date, count: int = 6) -> List[Tuple[int, int]]:
     return months
 
 
-def four_week_windows(year: int, month: int) -> List[Tuple[date, date]]:
-    """Return the 4 weekly windows for a KPI month identified by its end-month label."""
-    reference_date = date(year, month, 15)
-    month_start, _ = _kpi_month_window(reference_date)
+def five_week_windows(year: int, month: int) -> List[Tuple[date, date]]:
+    """Return 5 weekly windows for a KPI month identified by its end-month label."""
+    month_start, _ = kpi_window_by_end_month(year, month)
     windows = []
-    for i in range(4):
+    for i in range(5):
         start = month_start + timedelta(days=7 * i)
         end = start + timedelta(days=6)
         windows.append((start, end))
@@ -537,29 +551,24 @@ if page == "✨ Submit Content":
 
     late_deadline = prev_end + timedelta(days=grace_days)
     has_prev_window = today <= late_deadline
-    window_options = [
-        (
-            current_start,
-            current_end,
-            f"Current KPI window: {current_start} to {current_end}",
-        )
-    ]
+    window_labels = {
+        "current": f"Current KPI window: {current_start} to {current_end}",
+    }
     if has_prev_window:
-        window_options.append(
-            (
-                prev_start,
-                prev_end,
-                f"Previous KPI window (late submit until {late_deadline}): {prev_start} to {prev_end}",
-            )
+        window_labels["previous"] = (
+            f"Previous KPI window (late submit until {late_deadline}): {prev_start} to {prev_end}"
         )
-
-    window_choice = st.selectbox(
+    window_keys = list(window_labels.keys())
+    window_key = st.selectbox(
         "Submission window",
-        window_options,
-        format_func=lambda item: item[2],
+        window_keys,
+        format_func=lambda item: window_labels[item],
         key="submission_window",
     )
-    kpi_start, kpi_end, _ = window_choice
+    if window_key == "previous":
+        kpi_start, kpi_end = prev_start, prev_end
+    else:
+        kpi_start, kpi_end = current_start, current_end
 
     default_date = min(max(today, kpi_start), kpi_end)
     date_key = f"posted_date_{kpi_start.isoformat()}_{kpi_end.isoformat()}"
@@ -571,13 +580,21 @@ if page == "✨ Submit Content":
         st.caption(
             f"Late submissions are open until {late_deadline} (UTC), but the posted date must stay inside the selected window."
         )
-    posted_date = st.date_input(
-        "Posted date (UTC)",
-        value=default_date,
-        min_value=kpi_start,
-        max_value=kpi_end,
-        key=date_key,
-    )
+    if date_key in st.session_state:
+        posted_date = st.date_input(
+            "Posted date (UTC)",
+            min_value=kpi_start,
+            max_value=kpi_end,
+            key=date_key,
+        )
+    else:
+        posted_date = st.date_input(
+            "Posted date (UTC)",
+            value=default_date,
+            min_value=kpi_start,
+            max_value=kpi_end,
+            key=date_key,
+        )
     confirm = st.checkbox("I confirm the category and posted date are correct for this link.")
 
     if st.button("Submit Content"):
@@ -747,18 +764,18 @@ elif page == "🏅 Leaderboard":
             st.markdown(df.to_html(index=False), unsafe_allow_html=True)
 
     if data:
-        week_tabs = st.tabs(["Week 1", "Week 2", "Week 3", "Week 4", "Monthly"])
+        week_tabs = st.tabs(["Week 1", "Week 2", "Week 3", "Week 4", "Week 5", "Monthly"])
         windows = data.get("windows", [])
         weekly = data.get("weeks", [])
         monthly = data.get("monthly", [])
 
-        for idx in range(4):
+        for idx in range(5):
             with week_tabs[idx]:
                 window = windows[idx] if idx < len(windows) else (date.today(), date.today())
                 rows = weekly[idx] if idx < len(weekly) else []
                 render_board(f"Week {idx+1}", rows, window)
 
-        with week_tabs[4]:
+        with week_tabs[5]:
             if windows:
                 monthly_window = (windows[0][0], windows[-1][1])
             else:
@@ -875,7 +892,7 @@ elif page == "🛡️ Sergeant Console":
                 key="kpi_month_filter",
             )
             year, month = month_values[selected_idx]
-            start_date, end_date = _kpi_month_window(date(year, month, 1))
+            start_date, end_date = kpi_window_by_end_month(year, month)
             st.caption(f"Window: {start_date} → {end_date}")
             date_range = (start_date, end_date)
         elif date_filter_mode == "KPI week window":
@@ -901,7 +918,7 @@ elif page == "🛡️ Sergeant Console":
                 key="kpi_week_month_filter",
             )
             year, month = month_values[month_idx]
-            week_windows = four_week_windows(year, month)
+            week_windows = five_week_windows(year, month)
             week_labels = [
                 f"Week {i+1}: {window[0]} → {window[1]}"
                 for i, window in enumerate(week_windows)

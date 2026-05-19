@@ -1,5 +1,6 @@
 import os
 from datetime import datetime, timedelta, date, time, timezone
+from calendar import monthrange
 from typing import Dict, List, Optional, Tuple
 
 from dotenv import load_dotenv
@@ -51,12 +52,25 @@ def current_kpi_window_for_date(target_date: date) -> Tuple[date, date]:
     return _kpi_month_window(target_date)
 
 
-def four_week_windows(year: int, month: int) -> List[Tuple[date, date]]:
-    """Compute 4 week windows for a KPI month identified by its end-month label."""
-    reference_date = date(year, month, 15)
-    week1_start, _ = _kpi_month_window(reference_date)
+def kpi_window_by_end_month(year: int, month: int) -> Tuple[date, date]:
+    """Map a calendar label (e.g. June 2026) to the KPI window whose END is in that month."""
+    first = date(year, month, 1)
+    last = date(year, month, monthrange(year, month)[1])
+    min_idx = ((first - KPI_ANCHOR_START).days // 28) - 2
+    max_idx = ((last - KPI_ANCHOR_START).days // 28) + 2
+    for idx in range(min_idx, max_idx + 1):
+        start = KPI_ANCHOR_START + timedelta(days=idx * 28)
+        end = start + timedelta(days=27)
+        if end.year == year and end.month == month:
+            return start, end
+    return _kpi_month_window(last)
+
+
+def five_week_windows(year: int, month: int) -> List[Tuple[date, date]]:
+    """Compute 5 week windows for a KPI month identified by its end-month label."""
+    week1_start, _ = kpi_window_by_end_month(year, month)
     windows = []
-    for i in range(4):
+    for i in range(5):
         start = week1_start + timedelta(days=7 * i)
         end = start + timedelta(days=6)
         windows.append((start, end))
@@ -509,7 +523,7 @@ class UpdateService:
         return leaderboard
 
     def get_leaderboards(self, year: int, month: int) -> Dict:
-        windows = four_week_windows(year, month)
+        windows = five_week_windows(year, month)
         month_start = windows[0][0]
         month_end = windows[-1][1]
         month_posts = self._fetch_posts_range(month_start, month_end)
@@ -539,7 +553,7 @@ class UpdateService:
 
         monthly_list = []
         for h, data in monthly_agg.items():
-            avg_score = sum(data["scores"]) / 4 if data["scores"] else 0  # missing weeks treated as 0
+            avg_score = sum(data["scores"]) / len(windows) if windows else 0  # missing weeks treated as 0
             monthly_list.append({
                 "handle": h,
                 "tm": data["tm"],
