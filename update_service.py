@@ -66,11 +66,19 @@ def kpi_window_by_end_month(year: int, month: int) -> Tuple[date, date]:
     return _kpi_month_window(last)
 
 
-def five_week_windows(year: int, month: int) -> List[Tuple[date, date]]:
-    """Compute 5 week windows for a KPI month identified by its end-month label."""
+FIVE_WEEK_START_LABEL = (2026, 6)
+
+
+def kpi_week_count_for_label(year: int, month: int) -> int:
+    """Use 4 weeks for historical windows; 5 weeks from June 2026 label onward."""
+    return 5 if (year, month) >= FIVE_WEEK_START_LABEL else 4
+
+
+def kpi_week_windows(year: int, month: int) -> List[Tuple[date, date]]:
+    """Compute KPI weekly windows for a month label (4-week historical, 5-week from Jun 2026)."""
     week1_start, _ = kpi_window_by_end_month(year, month)
     windows = []
-    for i in range(5):
+    for i in range(kpi_week_count_for_label(year, month)):
         start = week1_start + timedelta(days=7 * i)
         end = start + timedelta(days=6)
         windows.append((start, end))
@@ -523,7 +531,7 @@ class UpdateService:
         return leaderboard
 
     def get_leaderboards(self, year: int, month: int) -> Dict:
-        windows = five_week_windows(year, month)
+        windows = kpi_week_windows(year, month)
         month_start = windows[0][0]
         month_end = windows[-1][1]
         month_posts = self._fetch_posts_range(month_start, month_end)

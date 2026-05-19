@@ -98,11 +98,19 @@ def kpi_month_sequence(today: date, count: int = 6) -> List[Tuple[int, int]]:
     return months
 
 
-def five_week_windows(year: int, month: int) -> List[Tuple[date, date]]:
-    """Return 5 weekly windows for a KPI month identified by its end-month label."""
+FIVE_WEEK_START_LABEL = (2026, 6)
+
+
+def kpi_week_count_for_label(year: int, month: int) -> int:
+    """Use 4 weeks for historical windows; 5 weeks from June 2026 label onward."""
+    return 5 if (year, month) >= FIVE_WEEK_START_LABEL else 4
+
+
+def kpi_week_windows(year: int, month: int) -> List[Tuple[date, date]]:
+    """Return KPI weekly windows for a month label (4-week historical, 5-week from Jun 2026)."""
     month_start, _ = kpi_window_by_end_month(year, month)
     windows = []
-    for i in range(5):
+    for i in range(kpi_week_count_for_label(year, month)):
         start = month_start + timedelta(days=7 * i)
         end = start + timedelta(days=6)
         windows.append((start, end))
@@ -548,7 +556,7 @@ if page == "✨ Submit Content":
     # Keep submit window aligned with leaderboard's 5-week KPI monthly window.
     base_start, base_end = current_kpi_window(today)
     current_label = (base_end.year, base_end.month)
-    current_windows = five_week_windows(*current_label)
+    current_windows = kpi_week_windows(*current_label)
     current_start, current_end = current_windows[0][0], current_windows[-1][1]
     prev_end = current_start - timedelta(days=1)
     prev_start = prev_end - timedelta(days=27)
@@ -768,18 +776,20 @@ elif page == "🏅 Leaderboard":
             st.markdown(df.to_html(index=False), unsafe_allow_html=True)
 
     if data:
-        week_tabs = st.tabs(["Week 1", "Week 2", "Week 3", "Week 4", "Week 5", "Monthly"])
         windows = data.get("windows", [])
         weekly = data.get("weeks", [])
         monthly = data.get("monthly", [])
 
-        for idx in range(5):
+        week_labels = [f"Week {i+1}" for i in range(len(windows))]
+        week_tabs = st.tabs(week_labels + ["Monthly"])
+
+        for idx in range(len(windows)):
             with week_tabs[idx]:
                 window = windows[idx] if idx < len(windows) else (date.today(), date.today())
                 rows = weekly[idx] if idx < len(weekly) else []
                 render_board(f"Week {idx+1}", rows, window)
 
-        with week_tabs[5]:
+        with week_tabs[len(windows)]:
             if windows:
                 monthly_window = (windows[0][0], windows[-1][1])
             else:
@@ -922,7 +932,7 @@ elif page == "🛡️ Sergeant Console":
                 key="kpi_week_month_filter",
             )
             year, month = month_values[month_idx]
-            week_windows = five_week_windows(year, month)
+            week_windows = kpi_week_windows(year, month)
             week_labels = [
                 f"Week {i+1}: {window[0]} → {window[1]}"
                 for i, window in enumerate(week_windows)
