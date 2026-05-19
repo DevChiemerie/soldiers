@@ -545,7 +545,11 @@ if page == "✨ Submit Content":
 
     today = datetime.now(timezone.utc).date()
     grace_days = 2
-    current_start, current_end = current_kpi_window(today)
+    # Keep submit window aligned with leaderboard's 5-week KPI monthly window.
+    base_start, base_end = current_kpi_window(today)
+    current_label = (base_end.year, base_end.month)
+    current_windows = five_week_windows(*current_label)
+    current_start, current_end = current_windows[0][0], current_windows[-1][1]
     prev_end = current_start - timedelta(days=1)
     prev_start = prev_end - timedelta(days=27)
 
